@@ -28,3 +28,103 @@ plot(pressure)
 ```
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+```{r}
+library(airway)
+library(DESeq2)
+
+data(airway)
+airway
+```
+
+```{r}
+# pull the count matrix out of the SummarizedExperiment
+counts <- assay(airway, "counts")
+
+# select rows 1:5 and column 1:4
+
+counts[1:5, 1:4]
+
+#counts dimension
+
+dim(counts)
+
+#Total reads per column (or per sample)
+
+colSums(counts)
+
+```
+
+
+```{r}
+library(ggplot2)
+library(tibble)
+
+sample1_counts <- counts[, "SRR1039508"]
+
+# distribution of counts acroos all genes in one sample
+
+ggplot(tibble(count = sample1_counts), aes(x = count)) +
+  geom_histogram(bins = 100)+
+  labs(title = "Counts across all genes in SRR1039508",
+       x = "raw count", y = "number of genes")
+  
+  
+```
+
+```{r}
+#The first fix to such a skewed data is to log transform the values
+
+ggplot(tibble(count = sample1_counts), aes(x = count+1)) +
+  geom_histogram(bins = 100)+
+  scale_x_log10()+
+  labs(title = "Counts across all genes in SRR1039508",
+       x = "raw count", y = "number of genes")
+```
+
+```{r}
+# pick a moderately expressed gene
+gene_id <- "ENSG00000000003"   # TSPAN6
+gene_counts <- counts[gene_id, ]
+gene_counts
+
+```
+
+
+
+```{r}
+gene_means <- rowMeans(counts)
+gene_vars  <- apply(counts, 1, var)
+
+mv_data <- tibble(mean = gene_means, variance = gene_vars)
+
+ggplot(mv_data, aes(x = mean+1, y = variance+1)) +# +1 pseudocount only for log-axis display; not used in analysis
+  geom_point(alpha = 0.2, size = 0.5) +
+  scale_x_log10() +
+  scale_y_log10() +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Mean-variance relationship across all genes",
+       subtitle = "red dashed line: variance = mean (Poisson)",
+       x = "mean count (log10)", y = "variance (log10)")
+
+
+```
+Down with dex (anti-inflammatory effect — proinflammatory targets):
+
+IL6 — proinflammatory cytokine, classic GR-suppressed target
+PTGS2 (COX-2) — proinflammatory enzyme, NF-κB target, GR-suppressed
+CCL2 (MCP-1) — chemokine, NF-κB target
+
+Up with dex (direct GR transactivation targets):
+
+DUSP1 (MKP-1) — this is a textbook GR-induced gene
+FKBP5 — GR pathway feedback, very strongly induced by dex
+TSC22D3 (GILZ) — anti-inflammatory effector induced by GR
+KLF15 — transcription factor induced by GR
+PER1 — circadian gene strongly induced by GR
+
+Unchanged (housekeeping):
+
+ACTB (β-actin)
+GAPDH
