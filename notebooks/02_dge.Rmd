@@ -1,0 +1,194 @@
+---
+title: "Differential gene expression analysis with DESeq2"
+author: "Radha Raman Pandey"
+date: "2026-05-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+```{r}
+library(airway)
+library(DESeq2)
+library(ggplot2)
+library(tibble)
+library(readr)
+
+
+data(airway)
+
+```
+
+
+```{r}
+dds <- DESeqDataSet(airway, design = ~cell + dex)
+
+dds$dex <- relevel(dds$dex, ref = "untrt")# set untrt as reference
+
+# by default the levels are set alphabetically so it is good to check
+# the level to make sure the reference is correctly assigned
+
+dds
+```
+
+
+```{r}
+keep <- rowSums(counts(dds) >=10) >=4 # keep the rows where more than four
+
+#samples have >= 10 counts
+
+dds <- dds[keep, ] # remove the row that do not meet the keep criteria
+
+nrow(dds)
+
+
+```
+
+```{r}
+dds <- DESeq(dds) # Run the DESeq analysis
+```
+```{r}
+
+plotDispEsts(dds) # plot the dispersion estimates
+
+res <- results(dds)
+
+res
+
+summary(res)
+```
+
+```{r}
+summary(res, alpha = 0.05)
+
+sum(res$padj <0.05, na.rm = TRUE)
+```
+
+```{r}
+# convert Ensembl IDs to symbols using the rowData we noticed last week
+
+gene_meta <- rowData(dds)
+
+head(gene_meta[, c("gene_id", "symbol")])
+
+# find FKBP5 (one of your predicted up-with-dex genes)
+fkbp5_id <- gene_meta$gene_id[gene_meta$symbol == "FKBP5"]
+
+fkbp5_id
+
+res[fkbp5_id, ]
+
+```
+
+
+
+```{r}
+# helper to look up a gene by symbol
+look_up <- function(symbol) {
+  ids <- gene_meta$gene_id[gene_meta$symbol == symbol]
+  res[ids, ]
+}
+
+# your predicted up-with-dex genes
+look_up("FKBP5")
+look_up("DUSP1")
+look_up("TSC22D3")
+look_up("KLF15")
+look_up("PER1")
+
+# your predicted down-with-dex genes
+look_up("IL6")
+look_up("PTGS2")
+look_up("CCL2")
+
+# your predicted unchanged genes
+look_up("ACTB")
+look_up("GAPDH")
+```
+
+```{r}
+plotMA(res, ylim = c(-6, 6))
+
+```
+```{r}
+
+hist(res$pvalue, breaks = 50, col = "grey",
+     main = "p-value histogram", xlab = "p-value")
+
+```
+
+
+```{r}
+
+vsd <- vst(dds, blind = FALSE)
+plotPCA(vsd, intgroup = c("dex", "cell"))
+
+```
+```{r}
+
+
+res_shrunk <- lfcShrink(dds, coef = "dex_trt_vs_untrt", type = "apeglm")
+
+
+
+plotMA(res_shrunk, ylim = c(-5, 5))
+
+
+```
+
+```{r}
+
+# save the results properly
+results_df <- as.data.frame(res) |>
+  tibble::rownames_to_column("ensembl_id") |>
+  dplyr::left_join(
+    as.data.frame(rowData(dds))[, c("gene_id", "symbol")],
+    by = c("ensembl_id" = "gene_id")
+  )
+
+write_tsv(results_df, "../results/tables/airway_dex_results.tsv")
+
+# session info for reproducibility
+sessionInfo()
+
+```
+
+## Week 2 summary
+
+- Ran DESeq2 on airway dataset, n=4 paired donors, dex vs untrt
+- Pre-filtered 63,677 → 16,139 expressed genes
+- Found 4,905 DEGs at padj < 0.1; ~30% of expressed transcriptome
+- All five predicted GR transactivation targets confirmed (FKBP5, DUSP1, TSC22D3, KLF15, PER1)
+- Predicted suppression genes (IL6, PTGS2, CCL2) all moved correct direction; effects modest as expected for unstimulated cells
+- ACTB unexpectedly upregulated (~1.8x, padj 0.008); reinforces that no gene is universally invariant
+- All four diagnostics (dispersion, MA, p-value histogram, PCA) clean
+
+## Key concepts internalized
+- Negative binomial = Poisson + biological overdispersion
+- Composition bias and median-of-ratios normalization
+- Paired design via blocking factor in formula
+- Empirical Bayes shrinkage (dispersions and fold changes)
+- Why p-value histogram shape matters
